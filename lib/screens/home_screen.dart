@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../services/pdf_service.dart';
 import '../services/translate_service.dart';
+import '../services/pdf_manager.dart';
 import '../utils/storage_helper.dart';
 import '../widgets/pdf_viewer.dart';
+import '../widgets/pdf_delete_dialog.dart';
 import '../utils/db_helper.dart';
+import '../utils/theme_provider.dart';
+import '../utils/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -57,10 +62,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // === MÉTODOS DE UTILIDAD ===
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(mensaje),
-        backgroundColor: esError ? Colors.red : null,
+        content: Row(
+          children: [
+            Icon(
+              esError ? Icons.error_outline : Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(mensaje)),
+          ],
+        ),
+        backgroundColor: esError ? AppTheme.getErrorColor(context) : AppTheme.getSuccessColor(context),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -177,8 +197,10 @@ class _HomeScreenState extends State<HomeScreen> {
         await _cargarArchivosRecientes();
       }
 
-      archivoActual = path!.split('/').last;
-      libroIdActual = await _obtenerOLibroInsertado(archivoActual!, path);
+      // CORREGIDO: Eliminadas las advertencias de null-safety
+      final nombreArchivo = path.split('/').last;
+      archivoActual = nombreArchivo;
+      libroIdActual = await _obtenerOLibroInsertado(nombreArchivo, path);
       
       paginas = await PdfService.leerPaginas(path);
       paginasOriginales = List.from(paginas);
@@ -197,10 +219,10 @@ class _HomeScreenState extends State<HomeScreen> {
       
       setState(() {
         isLoading = false;
-        archivoActual = path!.split('/').last;
+        archivoActual = nombreArchivo;
       });
       
-      _mostrarMensaje('PDF cargado: $archivoActual');
+      _mostrarMensaje('PDF cargado: $nombreArchivo');
     } catch (e) {
       setState(() => isLoading = false);
       _mostrarMensaje('Error al cargar PDF: $e', esError: true);
@@ -273,7 +295,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await DBHelper.insertarMarcador(
         libroIdActual, paginaActual,
         titulo: resultado[0],
-        nota: resultado[1]?.isNotEmpty == true ? resultado[1] : null,
+        // CORREGIDO: Lógica simplificada
+        nota: resultado[1].isEmpty ? null : resultado[1],
       );
       await _cargarMarcadores();
       _mostrarMensaje('Marcador agregado exitosamente');
@@ -334,6 +357,77 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // === MÉTODOS DE ELIMINACIÓN ===
+  
+  /// Elimina un PDF solo de la lista de recientes
+  Future<void> _eliminarDeRecientes(String rutaPdf, String nombreArchivo) async {
+    final confirmar = await PdfDeleteDialog.mostrarDialogoEliminarDeRecientes(
+      context: context,
+      nombreArchivo: nombreArchivo,
+    );
+    
+    if (confirmar == true) {
+      final exito = await PdfManager.eliminarDeRecientes(rutaPdf);
+      
+      if (exito) {
+        await _cargarArchivosRecientes(); // Recargar la lista
+        _mostrarMensaje('Eliminado de archivos recientes');
+      } else {
+        _mostrarMensaje('Error al eliminar de recientes', esError: true);
+      }
+    }
+  }
+  
+  /// Elimina un PDF completamente del sistema
+  Future<void> _eliminarPDFCompleto(String rutaPdf, String nombreArchivo) async {
+    // Buscar el libro en la base de datos
+    final libros = await DBHelper.obtenerLibros();
+    final libro = libros.firstWhere(
+      (l) => l['ruta_pdf'] == rutaPdf,
+      orElse: () => <String, dynamic>{},
+    );
+    
+    if (libro.isEmpty) {
+      // Si no está en BD, solo eliminar de recientes
+      await _eliminarDeRecientes(rutaPdf, nombreArchivo);
+      return;
+    }
+    
+    final libroId = libro['id'] as int;
+    
+    final confirmar = await PdfDeleteDialog.mostrarDialogoEliminar(
+      context: context,
+      nombreArchivo: nombreArchivo,
+      libroId: libroId,
+    );
+    
+    if (confirmar == true) {
+      // Mostrar diálogo de progreso
+      PdfDeleteDialog.mostrarDialogoProgreso(context);
+      
+      final exito = await PdfManager.eliminarPDF(
+        libroId: libroId,
+        rutaPdf: rutaPdf,
+        nombreArchivo: nombreArchivo,
+      );
+      
+      // Cerrar diálogo de progreso
+      Navigator.of(context).pop();
+      
+      if (exito) {
+        await _cargarArchivosRecientes(); // Recargar la lista
+        _mostrarMensaje('PDF eliminado completamente');
+        
+        // Si estamos viendo este PDF, limpiar la vista
+        if (archivoActual != null && archivoActual == nombreArchivo) {
+          _limpiarDatos();
+        }
+      } else {
+        _mostrarMensaje('Error al eliminar PDF', esError: true);
+      }
+    }
+  }
+
   // === DIÁLOGOS ===
   Future<List<String>?> _mostrarDialogo({
     required String titulo,
@@ -344,7 +438,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return showDialog<List<String>>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(titulo),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: campos.asMap().entries.map((entry) {
@@ -357,6 +452,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: InputDecoration(
                   labelText: campo['label'],
                   hintText: campo['hint'],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
                 ),
                 maxLines: campo['maxLines'] ?? 1,
               ),
@@ -398,26 +498,29 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Crear Resaltado'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Crear Resaltado', style: TextStyle(fontWeight: FontWeight.w600)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Texto seleccionado:'),
+                const Text('Texto seleccionado:', style: TextStyle(fontWeight: FontWeight.w500)),
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(12),
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(4),
+                    color: Theme.of(context).colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(textoSeleccionado, style: const TextStyle(fontStyle: FontStyle.italic)),
                 ),
                 const SizedBox(height: 16),
-                const Text('Color:'),
+                const Text('Color:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: coloresResaltado.entries.map((entry) {
                     final isSelected = entry.value == colorSeleccionado;
                     return FilterChip(
@@ -433,7 +536,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 16),
-                const Text('Tipo:'),
+                const Text('Tipo:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Radio<String>(
@@ -453,9 +557,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: notaController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Nota (opcional)',
                     hintText: 'Agrega un comentario...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surface,
                   ),
                   maxLines: 3,
                 ),
@@ -485,31 +594,67 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(esMarcador ? (item['titulo'] ?? 'Marcador') : 'Resaltado'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          esMarcador ? (item['titulo'] ?? 'Marcador') : 'Resaltado',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Página: ${item['pagina'] + 1}'),
-              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Página ${item['pagina'] + 1}',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               if (!esMarcador) ...[
-                const Text('Texto:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Texto:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(8),
-                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Color(int.parse(item['color'].substring(1), radix: 16) + 0x33000000),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(item['texto_resaltado']),
                 ),
-                Text('Tipo: ${item['tipo']}'),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(
+                      item['tipo'] == 'underline' ? Icons.format_underlined : Icons.highlight,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Tipo: ${item['tipo']}'),
+                  ],
+                ),
               ],
               if (item['nota'] != null && item['nota'].isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text('Nota:', style: TextStyle(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 8),
-                const Text('Nota:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(item['nota']),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(item['nota']),
+                ),
               ],
             ],
           ),
@@ -550,9 +695,22 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        title:  Text('URPBOOK'),
+        title: const Text('URPBOOK'),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
         actions: [
+          // Botón de modo oscuro (siempre visible)
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, child) {
+              return IconButton(
+                icon: Icon(themeProvider.themeIcon),
+                tooltip: themeProvider.themeTooltip,
+                onPressed: () => themeProvider.toggleTheme(),
+              );
+            },
+          ),
           if (archivoActual != null) ...[
             IconButton(
               icon: Icon(Icons.highlight_alt, color: modoResaltado ? Colors.orange : null),
@@ -601,17 +759,41 @@ class _HomeScreenState extends State<HomeScreen> {
                 tooltip: mostrandoTraduccion ? 'Mostrar original' : 'Mostrar traducción',
                 onPressed: _cambiarIdioma,
               ),
+            // Botón de casa - Navega a la página principal
+            IconButton(
+              icon: const Icon(Icons.home),
+              tooltip: 'Ir a página principal',
+              onPressed: archivoActual == null ? null : _irAInicio,
+            ),
           ],
-          // Botón de casa - Navega a la página principal
-          IconButton(
-            icon: const Icon(Icons.home),
-            tooltip: 'Ir a página principal',
-            onPressed: archivoActual == null ? null : _irAInicio,
-          ),
         ],
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Cargando PDF...',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : archivoActual == null
               ? _buildRecientes()
               : mostrarMarcadores
@@ -631,18 +813,121 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildRecientes() {
     if (archivosRecientes.isEmpty) {
-      return const Center(
-        child: Text('No hay archivos recientes.\nToca el "+" para cargar uno.', textAlign: TextAlign.center),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.picture_as_pdf_outlined,
+                size: 64,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No hay archivos recientes',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Toca el botón "+" para cargar tu primer PDF',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       );
     }
+
     return ListView.builder(
+      padding: const EdgeInsets.all(16),
       itemCount: archivosRecientes.length,
       itemBuilder: (context, i) {
         final nombre = archivosRecientes[i].split('/').last;
-        return ListTile(
-          leading: const Icon(Icons.picture_as_pdf),
-          title: Text(nombre),
-          onTap: () => _cargarPDF(path: archivosRecientes[i]),
+        return Card(
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            leading: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.picture_as_pdf_outlined,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            title: Text(
+              nombre,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Text(
+              'Toca para abrir',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            trailing: PopupMenuButton<String>(
+              icon: Icon(
+                Icons.more_vert,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'eliminar_recientes':
+                    await _eliminarDeRecientes(archivosRecientes[i], nombre);
+                    break;
+                  case 'eliminar_completo':
+                    await _eliminarPDFCompleto(archivosRecientes[i], nombre);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'eliminar_recientes',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.history_toggle_off,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Eliminar de recientes'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'eliminar_completo',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_forever,
+                        color: Theme.of(context).colorScheme.error,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Eliminar completamente'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            onTap: () => _cargarPDF(path: archivosRecientes[i]),
+          ),
         );
       },
     );
@@ -651,46 +936,108 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildListaItems(List<Map<String, dynamic>> items, {required bool esMarcadores}) {
     if (items.isEmpty) {
       return Center(
-        child: Text(
-          esMarcadores 
-            ? 'No hay marcadores para este libro.\nAgrega marcadores mientras lees.'
-            : 'No hay resaltados para este libro.\nSelecciona texto y resáltalo mientras lees.',
-          textAlign: TextAlign.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                esMarcadores ? Icons.bookmarks_outlined : Icons.highlight_outlined,
+                size: 64,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              esMarcadores ? 'No hay marcadores' : 'No hay resaltados',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              esMarcadores 
+                ? 'Agrega marcadores mientras lees para\nmarcar páginas importantes'
+                : 'Selecciona texto mientras lees para\ncrear resaltados y notas',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       );
     }
 
     return ListView.builder(
+      padding: const EdgeInsets.all(16),
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: ListTile(
-            leading: esMarcadores 
-              ? const Icon(Icons.bookmark, color: Colors.orange)
-              : Icon(
-                  item['tipo'] == 'underline' ? Icons.format_underlined : Icons.highlight,
-                  color: Color(int.parse(item['color'].substring(1), radix: 16) + 0xFF000000),
-                ),
+            contentPadding: const EdgeInsets.all(16),
+            leading: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: esMarcadores 
+                  ? Theme.of(context).colorScheme.tertiaryContainer
+                  : Color(int.parse(item['color'].substring(1), radix: 16) + 0x33000000),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                esMarcadores 
+                  ? Icons.bookmark_outlined
+                  : (item['tipo'] == 'underline' ? Icons.format_underlined : Icons.highlight_outlined),
+                color: esMarcadores 
+                  ? Theme.of(context).colorScheme.onTertiaryContainer
+                  : Color(int.parse(item['color'].substring(1), radix: 16) + 0xFF000000),
+              ),
+            ),
             title: Text(
               esMarcadores 
                 ? (item['titulo'] ?? 'Sin título')
                 : item['texto_resaltado'],
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w500),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Página ${item['pagina'] + 1}'),
-                if (item['nota'] != null && item['nota'].isNotEmpty)
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Página ${item['pagina'] + 1}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (item['nota'] != null && item['nota'].isNotEmpty) ...[
+                  const SizedBox(height: 8),
                   Text(
                     item['nota'],
                     maxLines: esMarcadores ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontStyle: FontStyle.italic),
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
+                ],
               ],
             ),
             trailing: IconButton(
@@ -718,17 +1065,39 @@ class _HomeScreenState extends State<HomeScreen> {
         if (modoResaltado)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(8),
-            color: Colors.orange[100],
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Theme.of(context).colorScheme.primaryContainer,
+                  Theme.of(context).colorScheme.primaryContainer.withOpacity(0.7),
+                ],
+              ),
+            ),
             child: Row(
               children: [
-                const Icon(Icons.highlight_alt, color: Colors.orange),
-                const SizedBox(width: 8),
-                const Text('Modo resaltado activo - Selecciona texto para resaltar'),
-                const Spacer(),
+                Icon(
+                  Icons.highlight_alt,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Modo resaltado activo - Selecciona texto para resaltar',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
                 TextButton(
                   onPressed: () => setState(() => modoResaltado = false),
-                  child: const Text('Desactivar'),
+                  child: Text(
+                    'Desactivar',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -737,8 +1106,12 @@ class _HomeScreenState extends State<HomeScreen> {
         if (documentoTraducido)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            color: mostrandoTraduccion ? Colors.green[100] : Colors.blue[100],
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            decoration: BoxDecoration(
+              color: mostrandoTraduccion 
+                ? Colors.green.withOpacity(0.1)
+                : Colors.blue.withOpacity(0.1),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -771,32 +1144,79 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         if (isTranslating) 
-          const Padding(
-            padding: EdgeInsets.all(16.0), 
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceVariant,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
             child: Column(
               children: [
-                LinearProgressIndicator(),
-                SizedBox(height: 8),
-                Text('Traduciendo documento...'),
+                LinearProgressIndicator(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.translate,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Traduciendo documento...',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         // Controles de navegación y tamaño
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            TextButton.icon(
-              icon: const Icon(Icons.remove),
-              label: const Text('Menor'),
-              onPressed: () => _cambiarFontSize(false),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+              ),
             ),
-            Text('Tamaño: ${fontSize.toInt()}'),
-            TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Mayor'),
-              onPressed: () => _cambiarFontSize(true),
-            ),
-          ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.remove),
+                label: const Text('Menor'),
+                onPressed: () => _cambiarFontSize(false),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Tamaño: ${fontSize.toInt()}',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Mayor'),
+                onPressed: () => _cambiarFontSize(true),
+              ),
+            ],
+          ),
         ),
       ],
     );
