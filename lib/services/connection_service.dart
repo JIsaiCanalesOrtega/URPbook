@@ -11,6 +11,6 @@ class ConnectionService {
     } catch (_) {
       return false;
     }
-  }
+  } 
 }
 

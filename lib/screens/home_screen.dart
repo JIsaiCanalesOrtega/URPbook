@@ -388,7 +388,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     
     if (libro.isEmpty) {
-      // Si no está en BD, solo eliminar de recientes
+      _mostrarMensaje('PDF no encontrado en la base de datos', esError: true);
+      // Si no se encuentra en la base de datos, eliminar solo de recientes   
       await _eliminarDeRecientes(rutaPdf, nombreArchivo);
       return;
     }
