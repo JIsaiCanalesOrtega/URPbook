@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
-
 import '../services/pdf_service.dart';
 import '../services/translate_service.dart';
 import '../services/pdf_manager.dart';
@@ -11,6 +10,7 @@ import '../widgets/pdf_delete_dialog.dart';
 import '../utils/db_helper.dart';
 import '../utils/theme_provider.dart';
 import '../utils/app_theme.dart';
+import '../services/biometric_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,18 +25,19 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> paginasOriginales = [];
   int paginaActual = 0;
   int libroIdActual = -1;
-  
+
   // Estados de carga
   bool isLoading = false;
   bool isTranslating = false;
   bool documentoTraducido = false;
-  bool mostrandoTraduccion = false; // Nuevo estado para controlar qué versión mostrar
-  
+  bool mostrandoTraduccion =
+      false; // Nuevo estado para controlar qué versión mostrar
+
   // Configuración y UI
   double fontSize = 18.0;
   List<String> archivosRecientes = [];
   String? archivoActual;
-  
+
   // Marcadores y resaltados
   List<Map<String, dynamic>> marcadores = [];
   List<Map<String, dynamic>> resaltados = [];
@@ -46,12 +47,17 @@ class _HomeScreenState extends State<HomeScreen> {
   bool modoResaltado = false;
   String colorResaltadoActual = '#FFFF00';
   String tipoResaltadoActual = 'highlight';
-  
+
   final TranslateService _translator = TranslateService();
-  
+  final BiometricService _biometricService = BiometricService();
+
   static const Map<String, String> coloresResaltado = {
-    'Amarillo': '#FFFF00', 'Verde': '#90EE90', 'Azul': '#87CEEB',
-    'Rosa': '#FFB6C1', 'Naranja': '#FFA500', 'Violeta': '#DDA0DD',
+    'Amarillo': '#FFFF00',
+    'Verde': '#90EE90',
+    'Azul': '#87CEEB',
+    'Rosa': '#FFB6C1',
+    'Naranja': '#FFA500',
+    'Violeta': '#DDA0DD',
   };
 
   @override
@@ -63,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // === MÉTODOS DE UTILIDAD ===
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -77,7 +83,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(child: Text(mensaje)),
           ],
         ),
-        backgroundColor: esError ? AppTheme.getErrorColor(context) : AppTheme.getSuccessColor(context),
+        backgroundColor:
+            esError
+                ? AppTheme.getErrorColor(context)
+                : AppTheme.getSuccessColor(context),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -116,17 +125,20 @@ class _HomeScreenState extends State<HomeScreen> {
       _mostrarMensaje('Primero debes traducir el documento', esError: true);
       return;
     }
-    
+
     setState(() {
       mostrandoTraduccion = !mostrandoTraduccion;
       // Actualizar las páginas mostradas según el idioma seleccionado
       // Las páginas ya contienen la traducción cuando documentoTraducido = true
     });
-    
-    _mostrarMensaje(mostrandoTraduccion ? 'Mostrando traducción' : 'Mostrando original');
+
+    _mostrarMensaje(
+      mostrandoTraduccion ? 'Mostrando traducción' : 'Mostrando original',
+    );
   }
 
-  bool _paginaTieneMarcador() => marcadores.any((m) => m['pagina'] == paginaActual);
+  bool _paginaTieneMarcador() =>
+      marcadores.any((m) => m['pagina'] == paginaActual);
   bool _paginaTieneResaltados() => resaltadosPaginaActual.isNotEmpty;
 
   // === MÉTODOS DE CARGA ===
@@ -153,7 +165,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (libroIdActual == -1) return;
     try {
       final resaltadosLibro = await DBHelper.obtenerResaltados(libroIdActual);
-      final resaltadosPagina = await DBHelper.obtenerResaltadosPagina(libroIdActual, paginaActual);
+      final resaltadosPagina = await DBHelper.obtenerResaltadosPagina(
+        libroIdActual,
+        paginaActual,
+      );
       setState(() {
         resaltados = resaltadosLibro;
         resaltadosPaginaActual = resaltadosPagina;
@@ -163,11 +178,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<int> _obtenerOLibroInsertado(String titulo, String ruta, {String? autor}) async {
+  Future<int> _obtenerOLibroInsertado(
+    String titulo,
+    String ruta, {
+    String? autor,
+  }) async {
     if (titulo.trim().isEmpty || ruta.trim().isEmpty) {
       throw ArgumentError('Título y ruta no pueden estar vacíos');
     }
-    
+
     final libros = await DBHelper.obtenerLibros();
     for (var libro in libros) {
       if (libro['ruta_pdf'] == ruta) return libro['id'];
@@ -201,14 +220,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final nombreArchivo = path.split('/').last;
       archivoActual = nombreArchivo;
       libroIdActual = await _obtenerOLibroInsertado(nombreArchivo, path);
-      
+
       paginas = await PdfService.leerPaginas(path);
       paginasOriginales = List.from(paginas);
-      
+
       // Cargar traducciones existentes
-      final traduccionesGuardadas = await DBHelper.obtenerTraducciones(libroIdActual);
+      final traduccionesGuardadas = await DBHelper.obtenerTraducciones(
+        libroIdActual,
+      );
       if (traduccionesGuardadas.isNotEmpty) {
-        final paginasTraducidas = traduccionesGuardadas.map((e) => e['texto_traducido'] as String).toList();
+        final paginasTraducidas =
+            traduccionesGuardadas
+                .map((e) => e['texto_traducido'] as String)
+                .toList();
         documentoTraducido = true;
         mostrandoTraduccion = true;
         paginas = paginasTraducidas;
@@ -216,12 +240,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await _cargarMarcadores();
       await _cargarResaltados();
-      
+
       setState(() {
         isLoading = false;
         archivoActual = nombreArchivo;
       });
-      
+
       _mostrarMensaje('PDF cargado: $nombreArchivo');
     } catch (e) {
       setState(() => isLoading = false);
@@ -240,10 +264,16 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       List<String> traducidas = [];
       for (int i = 0; i < paginasOriginales.length; i++) {
-        final textoTraducido = await _translator.traducir(paginasOriginales[i], 'es');
+        final textoTraducido = await _translator.traducir(
+          paginasOriginales[i],
+          'es',
+        );
         traducidas.add(textoTraducido);
         await DBHelper.insertarTraduccion(
-          libroIdActual, i, paginasOriginales[i], textoTraducido,
+          libroIdActual,
+          i,
+          paginasOriginales[i],
+          textoTraducido,
           DateTime.now().toIso8601String(),
         );
       }
@@ -284,16 +314,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final resultado = await _mostrarDialogo(
       titulo: 'Agregar Marcador - Página ${paginaActual + 1}',
       campos: [
-        {'label': 'Título del marcador', 'hint': 'Ej: Capítulo importante', 'required': true},
-        {'label': 'Nota (opcional)', 'hint': 'Agrega una nota personal...', 'maxLines': 3},
+        {
+          'label': 'Título del marcador',
+          'hint': 'Ej: Capítulo importante',
+          'required': true,
+        },
+        {
+          'label': 'Nota (opcional)',
+          'hint': 'Agrega una nota personal...',
+          'maxLines': 3,
+        },
       ],
     );
-    
+
     if (resultado == null) return;
 
     try {
       await DBHelper.insertarMarcador(
-        libroIdActual, paginaActual,
+        libroIdActual,
+        paginaActual,
         titulo: resultado[0],
         // CORREGIDO: Lógica simplificada
         nota: resultado[1].isEmpty ? null : resultado[1],
@@ -316,9 +355,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // === RESALTADOS ===
-  Future<void> _crearResaltado(String textoSeleccionado, int inicio, int fin) async {
+  Future<void> _crearResaltado(
+    String textoSeleccionado,
+    int inicio,
+    int fin,
+  ) async {
     if (libroIdActual == -1 || textoSeleccionado.trim().isEmpty) return;
-    
+
     if (inicio < 0 || fin < inicio) {
       _mostrarMensaje('Selección de texto inválida', esError: true);
       return;
@@ -329,17 +372,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await DBHelper.insertarResaltado(
-        libroIdActual, paginaActual, textoSeleccionado, inicio, fin,
+        libroIdActual,
+        paginaActual,
+        textoSeleccionado,
+        inicio,
+        fin,
         color: resultado['color'],
         tipo: resultado['tipo'],
         nota: resultado['nota'].isEmpty ? null : resultado['nota'],
       );
-      
+
       setState(() {
         colorResaltadoActual = resultado['color'];
         tipoResaltadoActual = resultado['tipo'];
       });
-      
+
       await _cargarResaltados();
       _mostrarMensaje('Resaltado creado exitosamente');
     } catch (e) {
@@ -358,17 +405,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // === MÉTODOS DE ELIMINACIÓN ===
-  
+
   /// Elimina un PDF solo de la lista de recientes
-  Future<void> _eliminarDeRecientes(String rutaPdf, String nombreArchivo) async {
+  Future<void> _eliminarDeRecientes(
+    String rutaPdf,
+    String nombreArchivo,
+  ) async {
     final confirmar = await PdfDeleteDialog.mostrarDialogoEliminarDeRecientes(
       context: context,
       nombreArchivo: nombreArchivo,
     );
-    
+
     if (confirmar == true) {
       final exito = await PdfManager.eliminarDeRecientes(rutaPdf);
-      
+
       if (exito) {
         await _cargarArchivosRecientes(); // Recargar la lista
         _mostrarMensaje('Eliminado de archivos recientes');
@@ -377,48 +427,51 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-  
+
   /// Elimina un PDF completamente del sistema
-  Future<void> _eliminarPDFCompleto(String rutaPdf, String nombreArchivo) async {
+  Future<void> _eliminarPDFCompleto(
+    String rutaPdf,
+    String nombreArchivo,
+  ) async {
     // Buscar el libro en la base de datos
     final libros = await DBHelper.obtenerLibros();
     final libro = libros.firstWhere(
       (l) => l['ruta_pdf'] == rutaPdf,
       orElse: () => <String, dynamic>{},
     );
-    
+
     if (libro.isEmpty) {
       _mostrarMensaje('PDF no encontrado en la base de datos', esError: true);
-      // Si no se encuentra en la base de datos, eliminar solo de recientes   
+      // Si no se encuentra en la base de datos, eliminar solo de recientes
       await _eliminarDeRecientes(rutaPdf, nombreArchivo);
       return;
     }
-    
+
     final libroId = libro['id'] as int;
-    
+
     final confirmar = await PdfDeleteDialog.mostrarDialogoEliminar(
       context: context,
       nombreArchivo: nombreArchivo,
       libroId: libroId,
     );
-    
+
     if (confirmar == true) {
       // Mostrar diálogo de progreso
       PdfDeleteDialog.mostrarDialogoProgreso(context);
-      
+
       final exito = await PdfManager.eliminarPDF(
         libroId: libroId,
         rutaPdf: rutaPdf,
         nombreArchivo: nombreArchivo,
       );
-      
+
       // Cerrar diálogo de progreso
       Navigator.of(context).pop();
-      
+
       if (exito) {
         await _cargarArchivosRecientes(); // Recargar la lista
         _mostrarMensaje('PDF eliminado completamente');
-        
+
         // Si estamos viendo este PDF, limpiar la vista
         if (archivoActual != null && archivoActual == nombreArchivo) {
           _limpiarDatos();
@@ -438,257 +491,335 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return showDialog<List<String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: campos.asMap().entries.map((entry) {
-            final i = entry.key;
-            final campo = entry.value;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: TextField(
-                controller: controllers[i],
-                decoration: InputDecoration(
-                  labelText: campo['label'],
-                  hintText: campo['hint'],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Theme.of(context).colorScheme.surface,
-                ),
-                maxLines: campo['maxLines'] ?? 1,
+      builder:
+          (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Text(
+              titulo,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children:
+                  campos.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final campo = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: TextField(
+                        controller: controllers[i],
+                        decoration: InputDecoration(
+                          labelText: campo['label'],
+                          hintText: campo['hint'],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                        ),
+                        maxLines: campo['maxLines'] ?? 1,
+                      ),
+                    );
+                  }).toList(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-            );
-          }).toList(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+              ElevatedButton(
+                onPressed: () {
+                  final valores =
+                      controllers.map((c) => c.text.trim()).toList();
+
+                  // Validar campos requeridos
+                  for (int i = 0; i < campos.length; i++) {
+                    if (campos[i]['required'] == true && valores[i].isEmpty) {
+                      _mostrarMensaje(
+                        '${campos[i]['label']} es requerido',
+                        esError: true,
+                      );
+                      return;
+                    }
+                  }
+
+                  Navigator.pop(context, valores);
+                },
+                child: const Text('Guardar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              final valores = controllers.map((c) => c.text.trim()).toList();
-              
-              // Validar campos requeridos
-              for (int i = 0; i < campos.length; i++) {
-                if (campos[i]['required'] == true && valores[i].isEmpty) {
-                  _mostrarMensaje('${campos[i]['label']} es requerido', esError: true);
-                  return;
-                }
-              }
-              
-              Navigator.pop(context, valores);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
   }
 
-  Future<Map<String, dynamic>?> _mostrarDialogoResaltado(String textoSeleccionado) async {
+  Future<Map<String, dynamic>?> _mostrarDialogoResaltado(
+    String textoSeleccionado,
+  ) async {
     final notaController = TextEditingController();
     String colorSeleccionado = colorResaltadoActual;
     String tipoSeleccionado = tipoResaltadoActual;
 
     return showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Crear Resaltado', style: TextStyle(fontWeight: FontWeight.w600)),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Texto seleccionado:', style: TextStyle(fontWeight: FontWeight.w500)),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(textoSeleccionado, style: const TextStyle(fontStyle: FontStyle.italic)),
-                ),
-                const SizedBox(height: 16),
-                const Text('Color:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: coloresResaltado.entries.map((entry) {
-                    final isSelected = entry.value == colorSeleccionado;
-                    return FilterChip(
-                      label: Text(entry.key),
-                      selected: isSelected,
-                      backgroundColor: Color(int.parse(entry.value.substring(1), radix: 16) + 0x33000000),
-                      onSelected: (selected) {
-                        if (selected) {
-                          setDialogState(() => colorSeleccionado = entry.value);
-                        }
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                const Text('Tipo:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Radio<String>(
-                      value: 'highlight',
-                      groupValue: tipoSeleccionado,
-                      onChanged: (value) => setDialogState(() => tipoSeleccionado = value!),
+                  title: const Text(
+                    'Crear Resaltado',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Texto seleccionado:',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            textoSeleccionado,
+                            style: const TextStyle(fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Color:',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children:
+                              coloresResaltado.entries.map((entry) {
+                                final isSelected =
+                                    entry.value == colorSeleccionado;
+                                return FilterChip(
+                                  label: Text(entry.key),
+                                  selected: isSelected,
+                                  backgroundColor: Color(
+                                    int.parse(
+                                          entry.value.substring(1),
+                                          radix: 16,
+                                        ) +
+                                        0x33000000,
+                                  ),
+                                  onSelected: (selected) {
+                                    if (selected) {
+                                      setDialogState(
+                                        () => colorSeleccionado = entry.value,
+                                      );
+                                    }
+                                  },
+                                );
+                              }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Tipo:',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Radio<String>(
+                              value: 'highlight',
+                              groupValue: tipoSeleccionado,
+                              onChanged:
+                                  (value) => setDialogState(
+                                    () => tipoSeleccionado = value!,
+                                  ),
+                            ),
+                            const Text('Resaltar'),
+                            Radio<String>(
+                              value: 'underline',
+                              groupValue: tipoSeleccionado,
+                              onChanged:
+                                  (value) => setDialogState(
+                                    () => tipoSeleccionado = value!,
+                                  ),
+                            ),
+                            const Text('Subrayar'),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: notaController,
+                          decoration: InputDecoration(
+                            labelText: 'Nota (opcional)',
+                            hintText: 'Agrega un comentario...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            filled: true,
+                            fillColor: Theme.of(context).colorScheme.surface,
+                          ),
+                          maxLines: 3,
+                        ),
+                      ],
                     ),
-                    const Text('Resaltar'),
-                    Radio<String>(
-                      value: 'underline',
-                      groupValue: tipoSeleccionado,
-                      onChanged: (value) => setDialogState(() => tipoSeleccionado = value!),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
                     ),
-                    const Text('Subrayar'),
+                    ElevatedButton(
+                      onPressed:
+                          () => Navigator.pop(context, {
+                            'color': colorSeleccionado,
+                            'tipo': tipoSeleccionado,
+                            'nota': notaController.text.trim(),
+                          }),
+                      child: const Text('Crear'),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: notaController,
-                  decoration: InputDecoration(
-                    labelText: 'Nota (opcional)',
-                    hintText: 'Agrega un comentario...',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
-                  maxLines: 3,
-                ),
-              ],
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, {
-                'color': colorSeleccionado,
-                'tipo': tipoSeleccionado,
-                'nota': notaController.text.trim(),
-              }),
-              child: const Text('Crear'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
-  void _mostrarDetallesItem(Map<String, dynamic> item, {required bool esMarcador}) {
+  void _mostrarDetallesItem(
+    Map<String, dynamic> item, {
+    required bool esMarcador,
+  }) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          esMarcador ? (item['titulo'] ?? 'Marcador') : 'Resaltado',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'Página ${item['pagina'] + 1}',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.w500,
+      builder:
+          (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Text(
+              esMarcador ? (item['titulo'] ?? 'Marcador') : 'Resaltado',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Página ${item['pagina'] + 1}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
+                  const SizedBox(height: 16),
+                  if (!esMarcador) ...[
+                    const Text(
+                      'Texto:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Color(
+                          int.parse(item['color'].substring(1), radix: 16) +
+                              0x33000000,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(item['texto_resaltado']),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(
+                          item['tipo'] == 'underline'
+                              ? Icons.format_underlined
+                              : Icons.highlight,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text('Tipo: ${item['tipo']}'),
+                      ],
+                    ),
+                  ],
+                  if (item['nota'] != null && item['nota'].isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nota:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(item['nota']),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _cambiarPagina(item['pagina']);
+                  setState(() {
+                    mostrarMarcadores = false;
+                    mostrarResaltados = false;
+                  });
+                },
+                child: const Text('Ir a página'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  if (esMarcador) {
+                    await _eliminarMarcador(item['id']);
+                  } else {
+                    await _eliminarResaltado(item['id']);
+                  }
+                },
+                child: const Text(
+                  'Eliminar',
+                  style: TextStyle(color: Colors.red),
                 ),
               ),
-              const SizedBox(height: 16),
-              if (!esMarcador) ...[
-                const Text('Texto:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Color(int.parse(item['color'].substring(1), radix: 16) + 0x33000000),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(item['texto_resaltado']),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(
-                      item['tipo'] == 'underline' ? Icons.format_underlined : Icons.highlight,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text('Tipo: ${item['tipo']}'),
-                  ],
-                ),
-              ],
-              if (item['nota'] != null && item['nota'].isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text('Nota:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(item['nota']),
-                ),
-              ],
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _cambiarPagina(item['pagina']);
-              setState(() {
-                mostrarMarcadores = false;
-                mostrarResaltados = false;
-              });
-            },
-            child: const Text('Ir a página'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              if (esMarcador) {
-                await _eliminarMarcador(item['id']);
-              } else {
-                await _eliminarResaltado(item['id']);
-              }
-            },
-            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -714,40 +845,65 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (archivoActual != null) ...[
             IconButton(
-              icon: Icon(Icons.highlight_alt, color: modoResaltado ? Colors.orange : null),
-              tooltip: modoResaltado ? 'Desactivar modo resaltado' : 'Activar modo resaltado',
+              icon: Icon(
+                Icons.highlight_alt,
+                color: modoResaltado ? Colors.orange : null,
+              ),
+              tooltip:
+                  modoResaltado
+                      ? 'Desactivar modo resaltado'
+                      : 'Activar modo resaltado',
               onPressed: () => setState(() => modoResaltado = !modoResaltado),
             ),
-            if (_paginaTieneResaltados()) const Icon(Icons.format_paint, color: Colors.blue, size: 20),
+            if (_paginaTieneResaltados())
+              const Icon(Icons.format_paint, color: Colors.blue, size: 20),
             IconButton(
               icon: Icon(
                 _paginaTieneMarcador() ? Icons.bookmark : Icons.bookmark_border,
                 color: _paginaTieneMarcador() ? Colors.orange : null,
               ),
-              tooltip: _paginaTieneMarcador() ? 'Página marcada' : 'Agregar marcador',
+              tooltip:
+                  _paginaTieneMarcador()
+                      ? 'Página marcada'
+                      : 'Agregar marcador',
               onPressed: _paginaTieneMarcador() ? null : _agregarMarcador,
             ),
             IconButton(
               icon: const Icon(Icons.bookmarks),
               tooltip: 'Ver marcadores',
-              onPressed: () => setState(() {
-                mostrarMarcadores = !mostrarMarcadores;
-                mostrarResaltados = false;
-              }),
+              onPressed: () async {
+                bool autorizado = await _biometricService.authenticateUser();
+                if (autorizado) {
+                  setState(() {
+                    mostrarMarcadores = !mostrarMarcadores;
+                    mostrarResaltados = false;
+                  });
+                } else {
+                  _mostrarMensaje('Autenticación fallida', esError: true);
+                }
+              },
             ),
             IconButton(
               icon: const Icon(Icons.highlight),
               tooltip: 'Ver resaltados',
-              onPressed: () => setState(() {
-                mostrarResaltados = !mostrarResaltados;
-                mostrarMarcadores = false;
-              }),
+              onPressed: () async {
+                bool autorizado = await _biometricService.authenticateUser();
+                if (autorizado) {
+                  setState(() {
+                    mostrarResaltados = !mostrarResaltados;
+                    mostrarMarcadores = false;
+                  });
+                } else {
+                  _mostrarMensaje('Autenticación fallida', esError: true);
+                }
+              },
             ),
             // Botón para traducir - Solo disponible si NO está traducido
             if (!documentoTraducido)
               IconButton(
                 icon: const Icon(Icons.translate),
-                tooltip: isTranslating ? 'Traduciendo...' : 'Traducir documento',
+                tooltip:
+                    isTranslating ? 'Traduciendo...' : 'Traducir documento',
                 onPressed: isTranslating ? null : _traducirDocumento,
               ),
             // Botón para cambiar idioma - Solo disponible si YA está traducido
@@ -757,7 +913,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   mostrandoTraduccion ? Icons.language : Icons.translate,
                   color: mostrandoTraduccion ? Colors.green : Colors.blue,
                 ),
-                tooltip: mostrandoTraduccion ? 'Mostrar original' : 'Mostrar traducción',
+                tooltip:
+                    mostrandoTraduccion
+                        ? 'Mostrar original'
+                        : 'Mostrar traducción',
                 onPressed: _cambiarIdioma,
               ),
             // Botón de casa - Navega a la página principal
@@ -769,46 +928,50 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ],
       ),
-      body: isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(32),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                      shape: BoxShape.circle,
+      body:
+          isLoading
+              ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(32),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer.withOpacity(0.3),
+                        shape: BoxShape.circle,
+                      ),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: Theme.of(context).colorScheme.primary,
+                    const SizedBox(height: 24),
+                    Text(
+                      'Cargando PDF...',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Cargando PDF...',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : archivoActual == null
+                  ],
+                ),
+              )
+              : archivoActual == null
               ? _buildRecientes()
               : mostrarMarcadores
-                  ? _buildListaItems(marcadores, esMarcadores: true)
-                  : mostrarResaltados
-                      ? _buildListaItems(resaltados, esMarcadores: false)
-                      : _buildPdfViewer(),
-      floatingActionButton: archivoActual == null
-          ? FloatingActionButton.extended(
-              onPressed: () => _cargarPDF(),
-              icon: const Icon(Icons.add),
-              label: const Text("Agregar PDF"),
-            )
-          : null,
+              ? _buildListaItems(marcadores, esMarcadores: true)
+              : mostrarResaltados
+              ? _buildListaItems(resaltados, esMarcadores: false)
+              : _buildPdfViewer(),
+      floatingActionButton:
+          archivoActual == null
+              ? FloatingActionButton.extended(
+                onPressed: () => _cargarPDF(),
+                icon: const Icon(Icons.add),
+                label: const Text("Agregar PDF"),
+              )
+              : null,
     );
   }
 
@@ -821,7 +984,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -842,7 +1007,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               'Toca el botón "+" para cargar tu primer PDF',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withOpacity(0.7),
               ),
               textAlign: TextAlign.center,
             ),
@@ -885,7 +1052,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icons.more_vert,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               onSelected: (value) async {
                 switch (value) {
                   case 'eliminar_recientes':
@@ -896,36 +1065,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     break;
                 }
               },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'eliminar_recientes',
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.history_toggle_off,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 20,
+              itemBuilder:
+                  (context) => [
+                    PopupMenuItem(
+                      value: 'eliminar_recientes',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.history_toggle_off,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('Eliminar de recientes'),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Eliminar de recientes'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'eliminar_completo',
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.delete_forever,
-                        color: Theme.of(context).colorScheme.error,
-                        size: 20,
+                    ),
+                    PopupMenuItem(
+                      value: 'eliminar_completo',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.delete_forever,
+                            color: Theme.of(context).colorScheme.error,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('Eliminar completamente'),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Eliminar completamente'),
-                    ],
-                  ),
-                ),
-              ],
+                    ),
+                  ],
             ),
             onTap: () => _cargarPDF(path: archivosRecientes[i]),
           ),
@@ -934,7 +1104,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildListaItems(List<Map<String, dynamic>> items, {required bool esMarcadores}) {
+  Widget _buildListaItems(
+    List<Map<String, dynamic>> items, {
+    required bool esMarcadores,
+  }) {
     if (items.isEmpty) {
       return Center(
         child: Column(
@@ -943,11 +1116,15 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                esMarcadores ? Icons.bookmarks_outlined : Icons.highlight_outlined,
+                esMarcadores
+                    ? Icons.bookmarks_outlined
+                    : Icons.highlight_outlined,
                 size: 64,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -962,11 +1139,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              esMarcadores 
-                ? 'Agrega marcadores mientras lees para\nmarcar páginas importantes'
-                : 'Selecciona texto mientras lees para\ncrear resaltados y notas',
+              esMarcadores
+                  ? 'Agrega marcadores mientras lees para\nmarcar páginas importantes'
+                  : 'Selecciona texto mientras lees para\ncrear resaltados y notas',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withOpacity(0.7),
               ),
               textAlign: TextAlign.center,
             ),
@@ -986,24 +1165,34 @@ class _HomeScreenState extends State<HomeScreen> {
             leading: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: esMarcadores 
-                  ? Theme.of(context).colorScheme.tertiaryContainer
-                  : Color(int.parse(item['color'].substring(1), radix: 16) + 0x33000000),
+                color:
+                    esMarcadores
+                        ? Theme.of(context).colorScheme.tertiaryContainer
+                        : Color(
+                          int.parse(item['color'].substring(1), radix: 16) +
+                              0x33000000,
+                        ),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                esMarcadores 
-                  ? Icons.bookmark_outlined
-                  : (item['tipo'] == 'underline' ? Icons.format_underlined : Icons.highlight_outlined),
-                color: esMarcadores 
-                  ? Theme.of(context).colorScheme.onTertiaryContainer
-                  : Color(int.parse(item['color'].substring(1), radix: 16) + 0xFF000000),
+                esMarcadores
+                    ? Icons.bookmark_outlined
+                    : (item['tipo'] == 'underline'
+                        ? Icons.format_underlined
+                        : Icons.highlight_outlined),
+                color:
+                    esMarcadores
+                        ? Theme.of(context).colorScheme.onTertiaryContainer
+                        : Color(
+                          int.parse(item['color'].substring(1), radix: 16) +
+                              0xFF000000,
+                        ),
               ),
             ),
             title: Text(
-              esMarcadores 
-                ? (item['titulo'] ?? 'Sin título')
-                : item['texto_resaltado'],
+              esMarcadores
+                  ? (item['titulo'] ?? 'Sin título')
+                  : item['texto_resaltado'],
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w500),
@@ -1013,7 +1202,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
@@ -1043,7 +1235,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             trailing: IconButton(
               icon: const Icon(Icons.arrow_forward_ios),
-              onPressed: () => _mostrarDetallesItem(item, esMarcador: esMarcadores),
+              onPressed:
+                  () => _mostrarDetallesItem(item, esMarcador: esMarcadores),
             ),
             onTap: () => _cambiarPagina(item['pagina']),
           ),
@@ -1071,7 +1264,9 @@ class _HomeScreenState extends State<HomeScreen> {
               gradient: LinearGradient(
                 colors: [
                   Theme.of(context).colorScheme.primaryContainer,
-                  Theme.of(context).colorScheme.primaryContainer.withOpacity(0.7),
+                  Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withOpacity(0.7),
                 ],
               ),
             ),
@@ -1109,9 +1304,10 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             decoration: BoxDecoration(
-              color: mostrandoTraduccion 
-                ? Colors.green.withOpacity(0.1)
-                : Colors.blue.withOpacity(0.1),
+              color:
+                  mostrandoTraduccion
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.blue.withOpacity(0.1),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1119,14 +1315,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icon(
                   mostrandoTraduccion ? Icons.language : Icons.article,
                   size: 16,
-                  color: mostrandoTraduccion ? Colors.green[800] : Colors.blue[800],
+                  color:
+                      mostrandoTraduccion
+                          ? Colors.green[800]
+                          : Colors.blue[800],
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  mostrandoTraduccion ? 'Mostrando: Traducción' : 'Mostrando: Original',
+                  mostrandoTraduccion
+                      ? 'Mostrando: Traducción'
+                      : 'Mostrando: Original',
                   style: TextStyle(
                     fontSize: 12,
-                    color: mostrandoTraduccion ? Colors.green[800] : Colors.blue[800],
+                    color:
+                        mostrandoTraduccion
+                            ? Colors.green[800]
+                            : Colors.blue[800],
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1144,18 +1348,18 @@ class _HomeScreenState extends State<HomeScreen> {
             onTextoSeleccionado: _crearResaltado,
           ),
         ),
-        if (isTranslating) 
+        if (isTranslating)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceVariant,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: Column(
               children: [
-                LinearProgressIndicator(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                LinearProgressIndicator(borderRadius: BorderRadius.circular(8)),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1198,7 +1402,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () => _cambiarFontSize(false),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(20),

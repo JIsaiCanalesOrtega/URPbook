@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- si porPermiso para Face ID / Touch ID -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Necesitamos usar Face ID o Touch ID para proteger tus marcadores y resaltados</string>
 </dict>
 </plist>

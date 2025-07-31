@@ -10,7 +10,8 @@ class PdfViewer extends StatefulWidget {
   final void Function(int nuevaPagina) onPageChanged;
   final List<Map<String, dynamic>> resaltados;
   final bool modoResaltado;
-  final void Function(String textoSeleccionado, int inicio, int fin)? onTextoSeleccionado;
+  final void Function(String textoSeleccionado, int inicio, int fin)?
+  onTextoSeleccionado;
 
   const PdfViewer({
     super.key,
@@ -41,15 +42,15 @@ class _PdfViewerState extends State<PdfViewer> {
   void _scheduleSelectionCallback(String selectedText) {
     // Cancelar timer previo si existe
     _selectionTimer?.cancel();
-    
+
     // Guardar selección actual
     _pendingSelection = selectedText;
-    
+
     // Programar callback con delay de 1.5 segundos
     _selectionTimer = Timer(const Duration(milliseconds: 1500), () {
       if (_pendingSelection != null && widget.onTextoSeleccionado != null) {
         final texto = _getCurrentPageText();
-        
+
         // Buscar la posición del texto seleccionado
         final startIndex = texto.indexOf(_pendingSelection!);
         if (startIndex != -1) {
@@ -64,8 +65,8 @@ class _PdfViewerState extends State<PdfViewer> {
   }
 
   String _getCurrentPageText() {
-    return (widget.paginas.isNotEmpty && 
-            widget.paginaActual >= 0 && 
+    return (widget.paginas.isNotEmpty &&
+            widget.paginaActual >= 0 &&
             widget.paginaActual < widget.paginas.length)
         ? widget.paginas[widget.paginaActual]
         : '';
@@ -82,13 +83,14 @@ class _PdfViewerState extends State<PdfViewer> {
 
   // Método auxiliar para convertir colores de forma segura
   Color _parseColor(dynamic colorValue) {
-    if (colorValue == null) return const Color(0xFFFFFF00); // Amarillo por defecto
-    
+    if (colorValue == null)
+      return const Color(0xFFFFFF00); // Amarillo por defecto
+
     String colorStr = colorValue.toString();
     if (!colorStr.startsWith('#')) {
       colorStr = '#$colorStr';
     }
-    
+
     try {
       return Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
     } catch (e) {
@@ -101,13 +103,13 @@ class _PdfViewerState extends State<PdfViewer> {
     final texto = _getCurrentPageText();
 
     // CORREGIDO: Método para construir el texto con resaltados
-    TextSpan _buildTextSpan() {
+    TextSpan buildTextSpan() {
       if (widget.resaltados.isEmpty || texto.isEmpty) {
         return TextSpan(
           text: texto,
           style: TextStyle(
-            fontSize: widget.fontSize, 
-            height: 1.5, 
+            fontSize: widget.fontSize,
+            height: 1.5,
             letterSpacing: 0.3,
             color: Theme.of(context).colorScheme.onSurface,
           ),
@@ -115,7 +117,7 @@ class _PdfViewerState extends State<PdfViewer> {
       }
 
       print('📝 Construyendo texto con ${widget.resaltados.length} resaltados');
-      
+
       List<InlineSpan> children = [];
       int start = 0;
 
@@ -129,13 +131,21 @@ class _PdfViewerState extends State<PdfViewer> {
 
       for (final r in sorted) {
         final int ini = _toInt(r['posicion_inicio']); // ✅ Nombre correcto
-        final int fin = _toInt(r['posicion_fin']);     // ✅ Nombre correcto
-        
-        print('🎯 Procesando resaltado: inicio=$ini, fin=$fin, texto="${r['texto_resaltado']}"');
-        
+        final int fin = _toInt(r['posicion_fin']); // ✅ Nombre correcto
+
+        print(
+          '🎯 Procesando resaltado: inicio=$ini, fin=$fin, texto="${r['texto_resaltado']}"',
+        );
+
         // Validaciones de seguridad MEJORADAS
-        if (ini < 0 || fin < 0 || ini > texto.length || fin > texto.length || ini >= fin) {
-          print('❌ Resaltado inválido: ini=$ini, fin=$fin, textoLength=${texto.length}');
+        if (ini < 0 ||
+            fin < 0 ||
+            ini > texto.length ||
+            fin > texto.length ||
+            ini >= fin) {
+          print(
+            '❌ Resaltado inválido: ini=$ini, fin=$fin, textoLength=${texto.length}',
+          );
           continue;
         }
 
@@ -143,61 +153,69 @@ class _PdfViewerState extends State<PdfViewer> {
         final textoResaltadoBD = r['texto_resaltado']?.toString() ?? '';
         final textoEnPosicion = texto.substring(ini, fin);
         if (textoResaltadoBD != textoEnPosicion) {
-          print('⚠️ Texto no coincide. BD: "$textoResaltadoBD", Posición: "$textoEnPosicion"');
+          print(
+            '⚠️ Texto no coincide. BD: "$textoResaltadoBD", Posición: "$textoEnPosicion"',
+          );
           // Aún así, continúa con el resaltado por posición
         }
 
         // Texto normal antes del resaltado
         if (ini > start) {
-          children.add(TextSpan(
-            text: texto.substring(start, ini),
-            style: TextStyle(
-              fontSize: widget.fontSize, 
-              height: 1.5, 
-              letterSpacing: 0.3,
-              color: Theme.of(context).colorScheme.onSurface,
+          children.add(
+            TextSpan(
+              text: texto.substring(start, ini),
+              style: TextStyle(
+                fontSize: widget.fontSize,
+                height: 1.5,
+                letterSpacing: 0.3,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
-          ));
+          );
         }
 
         // MEJORADO: Texto resaltado con mejor styling
         final backgroundColor = _parseColor(r['color']);
         final tipo = r['tipo']?.toString() ?? 'highlight';
-        
+
         // Calcular color de texto que contraste bien
         final brightness = backgroundColor.computeLuminance();
         final textColor = brightness > 0.5 ? Colors.black87 : Colors.white;
-        
-        children.add(TextSpan(
-          text: texto.substring(ini, fin),
-          style: TextStyle(
-            backgroundColor: backgroundColor.withOpacity(0.7), // Más suave
-            color: textColor, // Color que contrasta
-            fontWeight: FontWeight.w600, // Menos bold pero destacado
-            fontSize: widget.fontSize,
-            height: 1.5,
-            letterSpacing: 0.3,
-            decoration: tipo == 'underline' ? TextDecoration.underline : null,
-            decorationColor: backgroundColor,
-            decorationThickness: 2.0,
+
+        children.add(
+          TextSpan(
+            text: texto.substring(ini, fin),
+            style: TextStyle(
+              backgroundColor: backgroundColor.withOpacity(0.7), // Más suave
+              color: textColor, // Color que contrasta
+              fontWeight: FontWeight.w600, // Menos bold pero destacado
+              fontSize: widget.fontSize,
+              height: 1.5,
+              letterSpacing: 0.3,
+              decoration: tipo == 'underline' ? TextDecoration.underline : null,
+              decorationColor: backgroundColor,
+              decorationThickness: 2.0,
+            ),
           ),
-        ));
-        
+        );
+
         start = fin;
         print('✅ Resaltado aplicado correctamente');
       }
-      
+
       // Texto que queda después del último resaltado
       if (start < texto.length) {
-        children.add(TextSpan(
-          text: texto.substring(start),
-          style: TextStyle(
-            fontSize: widget.fontSize, 
-            height: 1.5, 
-            letterSpacing: 0.3,
-            color: Theme.of(context).colorScheme.onSurface,
+        children.add(
+          TextSpan(
+            text: texto.substring(start),
+            style: TextStyle(
+              fontSize: widget.fontSize,
+              height: 1.5,
+              letterSpacing: 0.3,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
-        ));
+        );
       }
 
       print('🎨 TextSpan construido con ${children.length} elementos');
@@ -215,7 +233,9 @@ class _PdfViewerState extends State<PdfViewer> {
               gradient: LinearGradient(
                 colors: [
                   Theme.of(context).colorScheme.primaryContainer,
-                  Theme.of(context).colorScheme.primaryContainer.withOpacity(0.7),
+                  Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withOpacity(0.7),
                 ],
               ),
             ),
@@ -233,14 +253,17 @@ class _PdfViewerState extends State<PdfViewer> {
                       Text(
                         'Modo resaltado activo',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
                         'Selecciona texto y espera un momento para resaltar',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer.withOpacity(0.8),
                           fontSize: 12,
                         ),
                       ),
@@ -250,7 +273,10 @@ class _PdfViewerState extends State<PdfViewer> {
                 // Indicador de selección pendiente
                 if (_pendingSelection != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.3),
                       borderRadius: BorderRadius.circular(12),
@@ -273,7 +299,10 @@ class _PdfViewerState extends State<PdfViewer> {
                           'Esperando...',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            color:
+                                Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
                           ),
                         ),
                       ],
@@ -289,21 +318,28 @@ class _PdfViewerState extends State<PdfViewer> {
             width: double.infinity,
             padding: const EdgeInsets.all(16.0),
             child: GestureDetector(
-              onHorizontalDragEnd: !widget.modoResaltado ? (details) {
-                if (details.primaryVelocity == null) return;
-                // Deslizar a la izquierda = siguiente página
-                if (details.primaryVelocity! < 0 && widget.paginaActual < widget.paginas.length - 1) {
-                  widget.onPageChanged(widget.paginaActual + 1);
-                }
-                // Deslizar a la derecha = página anterior
-                if (details.primaryVelocity! > 0 && widget.paginaActual > 0) {
-                  widget.onPageChanged(widget.paginaActual - 1);
-                }
-              } : null,
+              onHorizontalDragEnd:
+                  !widget.modoResaltado
+                      ? (details) {
+                        if (details.primaryVelocity == null) return;
+                        // Deslizar a la izquierda = siguiente página
+                        if (details.primaryVelocity! < 0 &&
+                            widget.paginaActual < widget.paginas.length - 1) {
+                          widget.onPageChanged(widget.paginaActual + 1);
+                        }
+                        // Deslizar a la derecha = página anterior
+                        if (details.primaryVelocity! > 0 &&
+                            widget.paginaActual > 0) {
+                          widget.onPageChanged(widget.paginaActual - 1);
+                        }
+                      }
+                      : null,
               child: SelectionArea(
                 onSelectionChanged: (selection) {
                   // Solo si está en modo resaltado
-                  if (widget.modoResaltado && widget.onTextoSeleccionado != null && selection != null) {
+                  if (widget.modoResaltado &&
+                      widget.onTextoSeleccionado != null &&
+                      selection != null) {
                     final selectedText = selection.plainText.trim();
                     if (selectedText.isNotEmpty) {
                       // CORREGIDO: Agregar delay para permitir extender la selección
@@ -319,7 +355,7 @@ class _PdfViewerState extends State<PdfViewer> {
                 },
                 child: SingleChildScrollView(
                   child: Text.rich(
-                    _buildTextSpan(),
+                    buildTextSpan(),
                     textAlign: TextAlign.justify,
                   ),
                 ),
@@ -331,7 +367,9 @@ class _PdfViewerState extends State<PdfViewer> {
         // Barra de navegación de páginas
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
             border: Border(
               top: BorderSide(
                 color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
@@ -347,14 +385,19 @@ class _PdfViewerState extends State<PdfViewer> {
                   IconButton(
                     icon: const Icon(Icons.arrow_back),
                     tooltip: 'Página anterior',
-                    onPressed: widget.paginaActual > 0
-                        ? () => widget.onPageChanged(widget.paginaActual - 1)
-                        : null,
+                    onPressed:
+                        widget.paginaActual > 0
+                            ? () =>
+                                widget.onPageChanged(widget.paginaActual - 1)
+                            : null,
                   ),
                   // Mostrar información de resaltados en la página actual
                   if (widget.resaltados.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.orange.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
@@ -383,7 +426,10 @@ class _PdfViewerState extends State<PdfViewer> {
               ),
               // Indicador de página con mejor styling
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(20),
@@ -399,9 +445,10 @@ class _PdfViewerState extends State<PdfViewer> {
               IconButton(
                 icon: const Icon(Icons.arrow_forward),
                 tooltip: 'Página siguiente',
-                onPressed: widget.paginaActual < widget.paginas.length - 1
-                    ? () => widget.onPageChanged(widget.paginaActual + 1)
-                    : null,
+                onPressed:
+                    widget.paginaActual < widget.paginas.length - 1
+                        ? () => widget.onPageChanged(widget.paginaActual + 1)
+                        : null,
               ),
             ],
           ),
