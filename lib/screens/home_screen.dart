@@ -47,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool modoResaltado = false;
   String colorResaltadoActual = '#FFFF00';
   String tipoResaltadoActual = 'highlight';
+  String? colorFiltro;
 
   final TranslateService _translator = TranslateService();
   final BiometricService _biometricService = BiometricService();
@@ -1154,94 +1155,166 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return Card(
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            leading: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color:
-                    esMarcadores
-                        ? Theme.of(context).colorScheme.tertiaryContainer
-                        : Color(
-                          int.parse(item['color'].substring(1), radix: 16) +
-                              0x33000000,
-                        ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                esMarcadores
-                    ? Icons.bookmark_outlined
-                    : (item['tipo'] == 'underline'
-                        ? Icons.format_underlined
-                        : Icons.highlight_outlined),
-                color:
-                    esMarcadores
-                        ? Theme.of(context).colorScheme.onTertiaryContainer
-                        : Color(
-                          int.parse(item['color'].substring(1), radix: 16) +
-                              0xFF000000,
-                        ),
-              ),
-            ),
-            title: Text(
-              esMarcadores
-                  ? (item['titulo'] ?? 'Sin título')
-                  : item['texto_resaltado'],
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'Página ${item['pagina'] + 1}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+    // Filtrado por color solo para resaltados
+    final listaFiltrada =
+        !esMarcadores
+            ? (colorFiltro == null
+                ? items
+                : items.where((item) => item['color'] == colorFiltro).toList())
+            : items;
+
+    return Column(
+      children: [
+        if (!esMarcadores)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: 'Filtrar por color',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                if (item['nota'] != null && item['nota'].isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    item['nota'],
-                    maxLines: esMarcadores ? 2 : 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontStyle: FontStyle.italic,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              value: colorFiltro,
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Todos')),
+                ...coloresResaltado.entries.map((entry) {
+                  return DropdownMenuItem(
+                    value: entry.value,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 20,
+                          height: 20,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Color(
+                              int.parse(entry.value.substring(1), radix: 16) +
+                                  0xFF000000,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        Text(entry.key),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  colorFiltro = value;
+                });
+              },
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: listaFiltrada.length,
+            itemBuilder: (context, index) {
+              final item = listaFiltrada[index];
+              return Card(
+                child: ListTile(
+                  contentPadding: const EdgeInsets.all(16),
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color:
+                          esMarcadores
+                              ? Theme.of(context).colorScheme.tertiaryContainer
+                              : Color(
+                                int.parse(
+                                      item['color'].substring(1),
+                                      radix: 16,
+                                    ) +
+                                    0x33000000,
+                              ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      esMarcadores
+                          ? Icons.bookmark_outlined
+                          : (item['tipo'] == 'underline'
+                              ? Icons.format_underlined
+                              : Icons.highlight_outlined),
+                      color:
+                          esMarcadores
+                              ? Theme.of(
+                                context,
+                              ).colorScheme.onTertiaryContainer
+                              : Color(
+                                int.parse(
+                                      item['color'].substring(1),
+                                      radix: 16,
+                                    ) +
+                                    0xFF000000,
+                              ),
                     ),
                   ),
-                ],
-              ],
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.arrow_forward_ios),
-              onPressed:
-                  () => _mostrarDetallesItem(item, esMarcador: esMarcadores),
-            ),
-            onTap: () => _cambiarPagina(item['pagina']),
+                  title: Text(
+                    esMarcadores
+                        ? (item['titulo'] ?? 'Sin título')
+                        : item['texto_resaltado'],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Página ${item['pagina'] + 1}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (item['nota'] != null && item['nota'].isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          item['nota'],
+                          maxLines: esMarcadores ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.arrow_forward_ios),
+                    onPressed:
+                        () => _mostrarDetallesItem(
+                          item,
+                          esMarcador: esMarcadores,
+                        ),
+                  ),
+                  onTap: () => _cambiarPagina(item['pagina']),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
