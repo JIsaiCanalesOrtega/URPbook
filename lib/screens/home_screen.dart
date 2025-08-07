@@ -1329,48 +1329,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Column(
       children: [
-        if (modoResaltado)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Theme.of(context).colorScheme.primaryContainer,
-                  Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer.withOpacity(0.7),
-                ],
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.highlight_alt,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Modo resaltado activo - Selecciona texto para resaltar',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => modoResaltado = false),
-                  child: Text(
-                    'Desactivar',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // ❌ ELIMINADO: Banner duplicado de modo resaltado
+        // Se mantiene solo el banner del pdf_viewer.dart que es más informativo
+        
         // Indicador de idioma actual
         if (documentoTraducido)
           Container(
