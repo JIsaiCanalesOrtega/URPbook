@@ -1057,31 +1057,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               onSelected: (value) async {
-                switch (value) {
-                  case 'eliminar_recientes':
-                    await _eliminarDeRecientes(archivosRecientes[i], nombre);
-                    break;
-                  case 'eliminar_completo':
-                    await _eliminarPDFCompleto(archivosRecientes[i], nombre);
-                    break;
+                if (value == 'eliminar_completo') {
+                  await _eliminarPDFCompleto(archivosRecientes[i], nombre);
                 }
               },
               itemBuilder:
                   (context) => [
-                    PopupMenuItem(
-                      value: 'eliminar_recientes',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.history_toggle_off,
-                            color: Theme.of(context).colorScheme.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          const Text('Eliminar de recientes'),
-                        ],
-                      ),
-                    ),
                     PopupMenuItem(
                       value: 'eliminar_completo',
                       child: Row(

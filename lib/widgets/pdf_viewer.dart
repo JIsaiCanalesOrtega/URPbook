@@ -174,30 +174,47 @@ class _PdfViewerState extends State<PdfViewer> {
           );
         }
 
-        // MEJORADO: Texto resaltado con mejor styling
-        final backgroundColor = _parseColor(r['color']);
+        // CORRECCIÓN AQUÍ: Separar lógica de subrayado y resaltado
+        final color = _parseColor(r['color']);
         final tipo = r['tipo']?.toString() ?? 'highlight';
 
-        // Calcular color de texto que contraste bien
-        final brightness = backgroundColor.computeLuminance();
-        final textColor = brightness > 0.5 ? Colors.black87 : Colors.white;
-
-        children.add(
-          TextSpan(
-            text: texto.substring(ini, fin),
-            style: TextStyle(
-              backgroundColor: backgroundColor.withOpacity(0.7), // Más suave
-              color: textColor, // Color que contrasta
-              fontWeight: FontWeight.w600, // Menos bold pero destacado
-              fontSize: widget.fontSize,
-              height: 1.5,
-              letterSpacing: 0.3,
-              decoration: tipo == 'underline' ? TextDecoration.underline : null,
-              decorationColor: backgroundColor,
-              decorationThickness: 2.0,
+        if (tipo == 'underline') {
+          // SOLO SUBRAYADO - SIN COLOR DE FONDO
+          children.add(
+            TextSpan(
+              text: texto.substring(ini, fin),
+              style: TextStyle(
+                fontSize: widget.fontSize,
+                height: 1.5,
+                letterSpacing: 0.3,
+                color: Theme.of(context).colorScheme.onSurface, // Color normal del texto
+                decoration: TextDecoration.underline,
+                decorationColor: color, // Color del subrayado
+                decorationThickness: 2.0,
+                // NO backgroundColor aquí
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          // SOLO RESALTADO - CON COLOR DE FONDO
+          final brightness = color.computeLuminance();
+          final textColor = brightness > 0.5 ? Colors.black87 : Colors.white;
+          
+          children.add(
+            TextSpan(
+              text: texto.substring(ini, fin),
+              style: TextStyle(
+                backgroundColor: color.withOpacity(0.7), // Color de fondo
+                color: textColor, // Color que contrasta
+                fontWeight: FontWeight.w600,
+                fontSize: widget.fontSize,
+                height: 1.5,
+                letterSpacing: 0.3,
+                // NO decoration aquí
+              ),
+            ),
+          );
+        }
 
         start = fin;
         print('✅ Resaltado aplicado correctamente');
